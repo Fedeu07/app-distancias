@@ -1,0 +1,26 @@
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Vercel
+.vercel
+
+# Misc
+.DS_Store
+*.pem
+
+# Python legacy (no longer used in build)
+webapp/
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
