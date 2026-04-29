@@ -1,0 +1,57 @@
+Metadata-Version: 2.4
+Name: app-distancias
+Version: 0.1.0
+Summary: CLI local para calcular distancias por ruta a bases operativas
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.12
+Requires-Dist: httpx>=0.27
+Requires-Dist: rich>=13.7
+
+ ## APP-DISTANCIAS (CLI)
+ 
+ Herramienta local por terminal para calcular **distancia real por ruta** desde un punto (lat/lon) hacia tus bases y listar las **5 más cercanas**.
+ 
+ ### Requisitos
+ 
+ - Python 3.10+
+ - Internet (recomendado): usa OSRM público por defecto (gratis, sin API key). Incluye modo offline aproximado.
+ 
+ ### Instalación
+ 
+ En PowerShell, dentro de este directorio:
+ 
+ ```bash
+ python -m pip install -e .
+ ```
+ 
+ ### Preparar bases
+ 
+ Editá `data/bases.csv` con tus bases (máximo 50 recomendado).
+ 
+ Columnas mínimas: `id,nombre,lat,lon`.
+ 
+ ### Uso
+ 
+ - Top 5 más cercanas por ruta (online, OSRM):
+ 
+ ```bash
+ app-distancias --lat -32.8895 --lon -68.8458 --bases data/bases.csv
+ ```
+ 
+ - Modo offline (aproximado por línea recta):
+ 
+ ```bash
+ app-distancias --lat -32.8895 --lon -68.8458 --bases data/bases.csv --offline
+ ```
+ 
+ - Ver ayuda:
+ 
+ ```bash
+ app-distancias --help
+ ```
+ 
+ ### Notas
+ 
+ - El provider por defecto es **OSRM (Table)**: 1 request por consulta, ideal para 1 origen -> N destinos.
+ - Se guarda caché en `./.cache/distancias.sqlite3` para acelerar consultas repetidas.

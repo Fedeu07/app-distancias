@@ -1,0 +1,2 @@
+[console_scripts]
+app-distancias = app_distancias.cli:app
