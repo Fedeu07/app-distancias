@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { cookies } from 'next/headers'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 const OSRM_BASE = 'https://router.project-osrm.org'
 
@@ -10,7 +11,6 @@ interface Centro {
   lon: number
 }
 
-// Haversine prefilter (km)
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371
   const dLat = ((lat2 - lat1) * Math.PI) / 180
@@ -23,7 +23,16 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+async function isAuthenticated() {
+  const cookieStore = await cookies()
+  return cookieStore.get('powersis_session')?.value === 'authenticated'
+}
+
 export async function GET(request: Request) {
+  if (!await isAuthenticated()) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+
   const { searchParams } = new URL(request.url)
   const lat = parseFloat(searchParams.get('lat') ?? '')
   const lon = parseFloat(searchParams.get('lon') ?? '')
@@ -34,8 +43,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'lat y lon son requeridos y deben ser números' }, { status: 400 })
   }
 
-  // Fetch all centros
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { data: centros, error } = await supabase
     .from('centros_operativos')
     .select('id, nombre, lat, lon')
@@ -43,22 +51,17 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!centros || centros.length === 0) return NextResponse.json([])
 
-  // Haversine pre-filter: keep closest N*4 to reduce OSRM calls
   const withHaversine = (centros as Centro[])
     .map(c => ({ ...c, hav: haversine(lat, lon, c.lat, c.lon) }))
     .sort((a, b) => a.hav - b.hav)
 
-  // Apply max_km filter on haversine (conservative prefilter, multiply by 1.5)
   const candidates = maxKm
     ? withHaversine.filter(c => c.hav <= maxKm * 1.5)
     : withHaversine
 
   const pool = candidates.slice(0, Math.min(limitN * 4, 50))
-
   if (pool.length === 0) return NextResponse.json([])
 
-  // Build OSRM Table API request
-  // Format: /table/v1/{profile}/{src};{dst1};{dst2}...?sources=0&destinations=1;2;...
   const coords = [[lon, lat], ...pool.map(c => [c.lon, c.lat])]
   const coordStr = coords.map(([ln, lt]) => `${ln},${lt}`).join(';')
   const destinations = pool.map((_, i) => i + 1).join(';')
@@ -84,7 +87,6 @@ export async function GET(request: Request) {
   const durations = osrmData.durations?.[0] ?? []
   const distances = osrmData.distances?.[0] ?? []
 
-  // Build results
   const results = pool
     .map((c, i) => {
       const dur = durations[i]

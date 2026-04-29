@@ -1,12 +1,24 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { cookies } from 'next/headers'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+function unauthorized() {
+  return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+}
+
+async function isAuthenticated() {
+  const cookieStore = await cookies()
+  return cookieStore.get('powersis_session')?.value === 'authenticated'
+}
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!await isAuthenticated()) return unauthorized()
+
   const { id } = await params
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { nombre, lat, lon } = await request.json()
 
   if (!nombre || lat === undefined || lon === undefined) {
@@ -28,8 +40,10 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!await isAuthenticated()) return unauthorized()
+
   const { id } = await params
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('centros_operativos')

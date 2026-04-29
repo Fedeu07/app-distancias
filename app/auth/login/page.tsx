@@ -2,11 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -15,51 +15,63 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setError('Credenciales incorrectas. Verificá tu email y contraseña.')
-      setLoading(false)
-    } else {
+
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+
+    if (res.ok) {
       router.push('/dashboard')
       router.refresh()
+    } else {
+      const data = await res.json()
+      setError(data.message ?? 'Usuario o contraseña incorrectos.')
+      setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#FAF7F4] px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4">
+      {/* Card */}
       <div className="w-full max-w-sm">
-        {/* Header */}
-        <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#E07B39] mb-4">
-            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-[#2C1F14] text-balance">App Distancias</h1>
-          <p className="mt-1 text-sm text-[#9C8E84]">Ingresá con tu cuenta para continuar</p>
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <Image
+            src="/powersis-logo.png"
+            alt="Powersis Tecnología"
+            width={220}
+            height={60}
+            className="object-contain mb-5"
+            priority
+          />
+          <h1 className="text-xl font-bold text-[#1A1A1A] text-balance text-center">
+            Calculador de Distancias
+          </h1>
+          <p className="mt-1 text-sm text-[#666]">Ingresá con tu usuario para continuar</p>
         </div>
 
-        {/* Card */}
-        <div className="bg-white rounded-2xl border border-[#E5DDD5] p-6 shadow-sm">
+        <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm">
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="email" className="text-sm font-medium text-[#2C1F14]">
-                Email
+              <label htmlFor="username" className="text-sm font-semibold text-[#1A1A1A]">
+                Usuario
               </label>
               <input
-                id="email"
-                type="email"
-                autoComplete="email"
+                id="username"
+                type="text"
+                autoComplete="username"
                 required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="tu@email.com"
-                className="w-full rounded-lg border border-[#E5DDD5] bg-[#FAF7F4] px-3 py-2.5 text-sm text-[#2C1F14] placeholder:text-[#9C8E84] focus:outline-none focus:ring-2 focus:ring-[#E07B39]/40 focus:border-[#E07B39] transition"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="Usuario"
+                className="w-full rounded-lg border border-[#D9D9D9] bg-[#FAFAFA] px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#ABABAB] focus:outline-none focus:ring-2 focus:ring-[#CC1A00]/30 focus:border-[#CC1A00] transition"
               />
             </div>
+
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="password" className="text-sm font-medium text-[#2C1F14]">
+              <label htmlFor="password" className="text-sm font-semibold text-[#1A1A1A]">
                 Contraseña
               </label>
               <input
@@ -70,12 +82,12 @@ export default function LoginPage() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full rounded-lg border border-[#E5DDD5] bg-[#FAF7F4] px-3 py-2.5 text-sm text-[#2C1F14] placeholder:text-[#9C8E84] focus:outline-none focus:ring-2 focus:ring-[#E07B39]/40 focus:border-[#E07B39] transition"
+                className="w-full rounded-lg border border-[#D9D9D9] bg-[#FAFAFA] px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#ABABAB] focus:outline-none focus:ring-2 focus:ring-[#CC1A00]/30 focus:border-[#CC1A00] transition"
               />
             </div>
 
             {error && (
-              <p className="rounded-lg bg-[#D94F3B]/10 border border-[#D94F3B]/20 px-3 py-2 text-sm text-[#D94F3B]">
+              <p className="rounded-lg bg-[#CC1A00]/8 border border-[#CC1A00]/20 px-3 py-2 text-sm text-[#CC1A00]">
                 {error}
               </p>
             )}
@@ -83,12 +95,16 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-1 w-full rounded-lg bg-[#E07B39] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#C86B2A] focus:outline-none focus:ring-2 focus:ring-[#E07B39]/50 disabled:opacity-60 disabled:cursor-not-allowed transition"
+              className="mt-1 w-full rounded-lg bg-[#CC1A00] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#AA1500] focus:outline-none focus:ring-2 focus:ring-[#CC1A00]/40 disabled:opacity-60 disabled:cursor-not-allowed transition"
             >
               {loading ? 'Ingresando...' : 'Ingresar'}
             </button>
           </form>
         </div>
+
+        <p className="mt-6 text-center text-xs text-[#ABABAB]">
+          Powersis Tecnología &copy; {new Date().getFullYear()}
+        </p>
       </div>
     </div>
   )
