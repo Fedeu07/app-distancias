@@ -43,7 +43,8 @@ export default function LoginPage() {
             alt="Powersis Tecnología"
             width={220}
             height={60}
-            className="object-contain mb-5"
+            style={{ width: 220, height: 'auto' }}
+            className="mb-5"
             priority
           />
           <h1 className="text-xl font-bold text-[#1A1A1A] text-balance text-center">
@@ -103,7 +104,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-[#ABABAB]">
-          Powersis Tecnología &copy; {new Date().getFullYear()}
+          Powersis Tecnología &copy; 2025
         </p>
       </div>
     </div>

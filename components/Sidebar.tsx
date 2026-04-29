@@ -54,7 +54,7 @@ export default function Sidebar() {
           alt="Powersis Tecnología"
           width={140}
           height={38}
-          className="object-contain"
+          style={{ width: 140, height: 'auto' }}
           priority
         />
         <span className="mt-1.5 text-[10px] font-medium text-[#999] tracking-wide uppercase">
