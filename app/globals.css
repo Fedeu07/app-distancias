@@ -1,14 +1,12 @@
 @import 'tailwindcss';
 
 @theme inline {
-  --font-sans: 'Inter', 'Arial', sans-serif;
-  --font-mono: 'Geist Mono', monospace;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', monospace;
 
-  /* Paleta Powersis Tecnología */
   --color-background: #F5F5F5;
   --color-surface: #FFFFFF;
-  --color-surface-alt: #F0F0F0;
-  --color-border: #E5E5E5;
+  --color-border: #E8E8E8;
   --color-muted: #999999;
 
   --color-foreground: #1A1A1A;
@@ -18,20 +16,18 @@
   --color-primary-hover: #AA1500;
   --color-primary-foreground: #FFFFFF;
 
-  --color-success: #2E8B57;
   --color-danger: #CC1A00;
+  --color-success: #2E8B57;
 
-  --radius: 0.5rem;
+  --radius: 0.75rem;
 }
 
 @layer base {
-  * {
-    box-sizing: border-box;
-  }
+  * { box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
   }
 }
