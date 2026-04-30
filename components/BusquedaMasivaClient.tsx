@@ -45,7 +45,7 @@ export default function BusquedaMasivaClient() {
 
   function descargarExcel() {
     if (!resultado) return
-    const blob = new Blob([resultado.excelBytes.buffer as ArrayBuffer], {
+    const blob = new Blob([resultado.excelBytes], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
     const url = URL.createObjectURL(blob)
@@ -173,7 +173,9 @@ export default function BusquedaMasivaClient() {
       ws['!ref'] = XLSX.utils.encode_range(newRange)
 
       // Serializar el workbook a bytes para descarga
-      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array<ArrayBuffer>
+      // XLSX.write con type:'array' devuelve number[] — lo convertimos explícitamente a Uint8Array
+      const wbRaw: number[] = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      const wbOut = new Uint8Array(wbRaw)
       const totalKm = resultados.reduce((sum, r) => sum + (r.distancia_km ?? 0), 0)
 
       setResultado({
