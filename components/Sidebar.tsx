@@ -34,6 +34,16 @@ const navItems = [
       </svg>
     ),
   },
+  {
+    href: '/dashboard/busqueda-masiva',
+    label: 'Búsqueda Masiva',
+    icon: (
+      <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h10" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18 18l3-3m0 0l-3-3m3 3H14" />
+      </svg>
+    ),
+  },
 ]
 
 export default function Sidebar() {
