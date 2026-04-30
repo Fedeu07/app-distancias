@@ -30,7 +30,13 @@ export default function BusquedaMasivaClient() {
   const [progresoMsg, setProgresoMsg] = useState('')
   const [error, setError] = useState('')
   const [procesados, setProcesados] = useState<number | null>(null)
+  const [workbookListo, setWorkbookListo] = useState<{ wb: XLSX.WorkBook; nombre: string } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  function descargarExcel() {
+    if (!workbookListo) return
+    XLSX.writeFile(workbookListo.wb, workbookListo.nombre)
+  }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -44,7 +50,8 @@ export default function BusquedaMasivaClient() {
   async function procesar() {
     setError('')
     setProcesados(null)
-    setProgreso(0)
+      setProgreso(0)
+      setWorkbookListo(null)
 
     // Validaciones
     if (!archivo) return setError('Seleccioná un archivo Excel.')
@@ -141,8 +148,8 @@ export default function BusquedaMasivaClient() {
       newRange.e.c = Math.max(newRange.e.c, kmIdx, sedeIdx ?? 0)
       ws['!ref'] = XLSX.utils.encode_range(newRange)
 
-      // Descargar el Excel modificado
-      XLSX.writeFile(wb, `resultados_${archivo.name}`)
+      // Guardar workbook listo para descarga manual
+      setWorkbookListo({ wb, nombre: `resultados_${archivo.name}` })
       setProcesados(procesadosCount)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ocurrió un error inesperado.')
@@ -265,9 +272,17 @@ export default function BusquedaMasivaClient() {
         </div>
       )}
 
-      {procesados !== null && !cargando && (
-        <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg p-3 text-sm mb-4">
-          Listo. Se procesaron {procesados} filas. El archivo fue descargado automáticamente.
+      {procesados !== null && !cargando && workbookListo && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <p className="text-green-700 text-sm font-medium">
+            Procesamiento completo — {procesados} filas calculadas correctamente.
+          </p>
+          <button
+            onClick={descargarExcel}
+            className="bg-green-600 hover:bg-green-700 text-white font-semibold text-sm px-5 py-2 rounded-lg transition-colors whitespace-nowrap"
+          >
+            Descargar Excel
+          </button>
         </div>
       )}
 
