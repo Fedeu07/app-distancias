@@ -45,7 +45,8 @@ export default function BusquedaMasivaClient() {
 
   function descargarExcel() {
     if (!resultado) return
-    const blob = new Blob([resultado.excelBytes], {
+    // .slice(0) garantiza un ArrayBuffer concreto (no SharedArrayBuffer) que acepta Blob
+    const blob = new Blob([resultado.excelBytes.slice(0)], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
     const url = URL.createObjectURL(blob)
