@@ -142,10 +142,20 @@ export default function BusquedaMasivaClient() {
         setProgreso(Math.round((procesadosCount / puntos.length) * 100))
       }
 
-      // Actualizar el rango de la hoja para incluir las nuevas columnas escritas
-      const newRange = XLSX.utils.decode_range(ws['!ref'] ?? 'A1')
-      newRange.e.c = Math.max(newRange.e.c, kmIdx, sedeIdx ?? 0)
-      ws['!ref'] = XLSX.utils.encode_range(newRange)
+      // Recalcular el rango completo de la hoja escaneando todas las celdas presentes
+      // para que las columnas nuevas (KM, sede) queden incluidas correctamente
+      const allCellKeys = Object.keys(ws).filter((k) => !k.startsWith('!'))
+      if (allCellKeys.length > 0) {
+        let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity
+        for (const key of allCellKeys) {
+          const addr = XLSX.utils.decode_cell(key)
+          if (addr.r < minR) minR = addr.r
+          if (addr.r > maxR) maxR = addr.r
+          if (addr.c < minC) minC = addr.c
+          if (addr.c > maxC) maxC = addr.c
+        }
+        ws['!ref'] = XLSX.utils.encode_range({ s: { r: minR, c: minC }, e: { r: maxR, c: maxC } })
+      }
 
       // Guardar workbook listo para descarga manual
       setWorkbookListo({ wb, nombre: `resultados_${archivo.name}` })
