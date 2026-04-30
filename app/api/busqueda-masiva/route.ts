@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
-
-const OSRM_BASE = 'https://router.project-osrm.org'
+import { osrmFetch, OSRM_BASE } from '@/lib/osrm'
 
 interface Centro {
   id: string
@@ -44,10 +43,7 @@ async function calcularCentroMasCercano(
   const osrmUrl = `${OSRM_BASE}/table/v1/driving/${coordStr}?sources=0&destinations=${destinations}&annotations=duration,distance`
 
   try {
-    const res = await fetch(osrmUrl, {
-      next: { revalidate: 0 },
-      signal: AbortSignal.timeout(15000),
-    })
+    const res = await osrmFetch(osrmUrl)
     if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`)
     const osrmData = await res.json()
 
@@ -103,12 +99,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No se pudieron obtener los centros' }, { status: 500 })
   }
 
-  // Procesar cada punto SECUENCIALMENTE para no saturar OSRM y obtener
-  // resultados correctos — idéntico al flujo de búsqueda individual
+  // Procesar cada punto con un pequeño delay entre llamadas a OSRM
+  // para no saturar el servidor público y evitar errores 429/502
+  const DELAY_MS = 150
   const resultados = []
   for (const punto of puntos) {
     const resultado = await calcularCentroMasCercano(punto.lat, punto.lon, centros as Centro[])
     resultados.push({ lat: punto.lat, lon: punto.lon, centro_mas_cercano: resultado })
+    if (puntos.length > 1) await new Promise((r) => setTimeout(r, DELAY_MS))
   }
 
   return NextResponse.json({ resultados })

@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
-
-const OSRM_BASE = 'https://router.project-osrm.org'
+import { osrmFetch, OSRM_BASE } from '@/lib/osrm'
 
 interface Centro {
   id: string
@@ -73,7 +72,7 @@ export async function GET(request: Request) {
     code?: string
   }
   try {
-    const res = await fetch(osrmUrl, { next: { revalidate: 0 } })
+    const res = await osrmFetch(osrmUrl)
     if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`)
     osrmData = await res.json()
   } catch (err) {
