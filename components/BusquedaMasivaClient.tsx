@@ -3,7 +3,6 @@
 import { useState, useRef } from 'react'
 import * as XLSX from 'xlsx'
 
-// Convierte letra(s) de columna Excel a índice 0-based: A=0, B=1, Z=25, AA=26 ...
 function colLetterToIndex(col: string): number {
   const upper = col.trim().toUpperCase()
   let idx = 0
@@ -17,6 +16,12 @@ function isValidColLetter(col: string) {
   return /^[A-Za-z]{1,3}$/.test(col.trim())
 }
 
+interface Resultado {
+  rowIdx: number
+  distancia_km: number | null
+  nombre: string | null
+}
+
 export default function BusquedaMasivaClient() {
   const [archivo, setArchivo] = useState<File | null>(null)
   const [colLat, setColLat] = useState('')
@@ -25,17 +30,30 @@ export default function BusquedaMasivaClient() {
   const [filaFin, setFilaFin] = useState('')
   const [colKm, setColKm] = useState('')
   const [colSede, setColSede] = useState('')
+  const [concurrencia, setConcurrencia] = useState('4')
   const [cargando, setCargando] = useState(false)
   const [progreso, setProgreso] = useState(0)
   const [progresoMsg, setProgresoMsg] = useState('')
   const [error, setError] = useState('')
-  const [procesados, setProcesados] = useState<number | null>(null)
-  const [workbookListo, setWorkbookListo] = useState<{ wb: XLSX.WorkBook; nombre: string } | null>(null)
+  const [resultado, setResultado] = useState<{
+    totalFilas: number
+    totalKm: number
+    excelBytes: Uint8Array
+    nombreArchivo: string
+  } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   function descargarExcel() {
-    if (!workbookListo) return
-    XLSX.writeFile(workbookListo.wb, workbookListo.nombre)
+    if (!resultado) return
+    const blob = new Blob([resultado.excelBytes], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = resultado.nombreArchivo
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -43,17 +61,16 @@ export default function BusquedaMasivaClient() {
     if (f) {
       setArchivo(f)
       setError('')
-      setProcesados(null)
+      setResultado(null)
     }
   }
 
   async function procesar() {
     setError('')
-    setProcesados(null)
-      setProgreso(0)
-      setWorkbookListo(null)
+    setResultado(null)
+    setProgreso(0)
+    setProgresoMsg('')
 
-    // Validaciones
     if (!archivo) return setError('Seleccioná un archivo Excel.')
     if (!isValidColLetter(colLat)) return setError('Ingresá una letra de columna válida para Latitud (ej: C).')
     if (!isValidColLetter(colLon)) return setError('Ingresá una letra de columna válida para Longitud (ej: D).')
@@ -65,32 +82,30 @@ export default function BusquedaMasivaClient() {
     if (!isValidColLetter(colKm)) return setError('Ingresá una letra de columna válida para KM salida (ej: J).')
     if (colSede.trim() !== '' && !isValidColLetter(colSede))
       return setError('La columna de sede no es válida (ej: K).')
+    const concurrenciaNum = Math.max(1, Math.min(10, parseInt(concurrencia) || 4))
 
     setCargando(true)
 
     try {
+      // Leer el archivo y extraer puntos
       const buffer = await archivo.arrayBuffer()
-      const wb = XLSX.read(buffer, { type: 'array' })
+      const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' })
       const ws = wb.Sheets[wb.SheetNames[0]]
-
-      // Obtener rango total de la hoja
       const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1')
-      const lastRow = range.e.r + 1 // 1-based
+      const lastRow = range.e.r + 1
 
       const latIdx = colLetterToIndex(colLat)
       const lonIdx = colLetterToIndex(colLon)
       const kmIdx = colLetterToIndex(colKm)
       const sedeIdx = colSede.trim() !== '' ? colLetterToIndex(colSede) : null
+      const inicio = filaInicioNum
+      const fin = filaFinNum ?? lastRow
 
-      const inicio = filaInicioNum // 1-based
-      const fin = filaFinNum ?? lastRow // 1-based
-
-      // Recolectar puntos válidos con su índice de fila original
       type Punto = { rowIdx: number; lat: number; lon: number }
       const puntos: Punto[] = []
 
       for (let row = inicio; row <= fin; row++) {
-        const rowZ = row - 1 // 0-based
+        const rowZ = row - 1
         const cellLat = ws[XLSX.utils.encode_cell({ r: rowZ, c: latIdx })]
         const cellLon = ws[XLSX.utils.encode_cell({ r: rowZ, c: lonIdx })]
         const latVal = cellLat ? parseFloat(String(cellLat.v)) : NaN
@@ -106,60 +121,67 @@ export default function BusquedaMasivaClient() {
         return
       }
 
-      // Procesar de a 1 punto por vez para evitar timeouts y obtener datos correctos
-      let procesadosCount = 0
+      // Procesar con concurrencia configurable
+      const resultados: Resultado[] = []
+      let procesados = 0
 
-      for (let i = 0; i < puntos.length; i++) {
-        const punto = puntos[i]
-        setProgresoMsg(`Calculando fila ${punto.rowIdx + 1} (${i + 1} de ${puntos.length})...`)
-
+      async function procesarPunto(p: Punto): Promise<Resultado> {
         const res = await fetch('/api/busqueda-masiva', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ puntos: [{ lat: punto.lat, lon: punto.lon }] }),
+          body: JSON.stringify({ puntos: [{ lat: p.lat, lon: p.lon }] }),
         })
-
         if (res.status === 401) throw new Error('Sesión expirada. Recargá la página e ingresá nuevamente.')
-        if (!res.ok) {
-          const errBody = await res.text()
-          throw new Error(`Error del servidor (${res.status}): ${errBody}`)
-        }
+        if (!res.ok) throw new Error(`Error del servidor (${res.status})`)
         const data = await res.json()
         const centro = data.resultados?.[0]?.centro_mas_cercano ?? null
-
-        // Escribir KM
-        const kmCell = XLSX.utils.encode_cell({ r: punto.rowIdx, c: kmIdx })
-        ws[kmCell] = { t: 'n', v: centro?.distancia_km ?? '' }
-
-        // Escribir sede si corresponde
-        if (sedeIdx !== null) {
-          const sedeCell = XLSX.utils.encode_cell({ r: punto.rowIdx, c: sedeIdx })
-          ws[sedeCell] = { t: 's', v: centro?.nombre ?? '' }
+        return {
+          rowIdx: p.rowIdx,
+          distancia_km: centro?.distancia_km ?? null,
+          nombre: centro?.nombre ?? null,
         }
-
-        procesadosCount++
-        setProgreso(Math.round((procesadosCount / puntos.length) * 100))
       }
 
-      // Recalcular el rango completo de la hoja escaneando todas las celdas presentes
-      // para que las columnas nuevas (KM, sede) queden incluidas correctamente
-      const allCellKeys = Object.keys(ws).filter((k) => !k.startsWith('!'))
-      if (allCellKeys.length > 0) {
-        let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity
-        for (const key of allCellKeys) {
-          const addr = XLSX.utils.decode_cell(key)
-          if (addr.r < minR) minR = addr.r
-          if (addr.r > maxR) maxR = addr.r
-          if (addr.c < minC) minC = addr.c
-          if (addr.c > maxC) maxC = addr.c
-        }
-        ws['!ref'] = XLSX.utils.encode_range({ s: { r: minR, c: minC }, e: { r: maxR, c: maxC } })
+      // Procesar en lotes de tamaño = concurrencia
+      for (let i = 0; i < puntos.length; i += concurrenciaNum) {
+        const lote = puntos.slice(i, i + concurrenciaNum)
+        setProgresoMsg(`Calculando filas ${lote[0].rowIdx + 1}–${lote[lote.length - 1].rowIdx + 1} (${procesados + lote.length} de ${puntos.length})...`)
+
+        const lotResults = await Promise.all(lote.map(procesarPunto))
+        resultados.push(...lotResults)
+        procesados += lote.length
+        setProgreso(Math.round((procesados / puntos.length) * 100))
       }
 
-      // Guardar workbook listo para descarga manual
-      setWorkbookListo({ wb, nombre: `resultados_${archivo.name}` })
-      setProcesados(procesadosCount)
+      // Escribir resultados en el workbook
+      for (const r of resultados) {
+        if (r.distancia_km !== null) {
+          const kmCell = XLSX.utils.encode_cell({ r: r.rowIdx, c: kmIdx })
+          ws[kmCell] = { t: 'n', v: r.distancia_km }
+        }
+        if (sedeIdx !== null && r.nombre !== null) {
+          const sedeCell = XLSX.utils.encode_cell({ r: r.rowIdx, c: sedeIdx })
+          ws[sedeCell] = { t: 's', v: r.nombre }
+        }
+      }
+
+      // Expandir el rango del sheet para incluir las columnas nuevas
+      const newRange = XLSX.utils.decode_range(ws['!ref'] ?? 'A1')
+      newRange.e.c = Math.max(newRange.e.c, kmIdx, sedeIdx ?? 0)
+      newRange.e.r = Math.max(newRange.e.r, ...resultados.map((r) => r.rowIdx))
+      ws['!ref'] = XLSX.utils.encode_range(newRange)
+
+      // Serializar el workbook a bytes para descarga
+      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array
+      const totalKm = resultados.reduce((sum, r) => sum + (r.distancia_km ?? 0), 0)
+
+      setResultado({
+        totalFilas: resultados.length,
+        totalKm: Math.round(totalKm * 100) / 100,
+        excelBytes: wbOut,
+        nombreArchivo: `resultados_${archivo.name.replace(/\.xlsx?$/i, '')}.xlsx`,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ocurrió un error inesperado.')
     } finally {
@@ -169,7 +191,7 @@ export default function BusquedaMasivaClient() {
   }
 
   const inputClass =
-    'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#CC1A00] focus:border-transparent w-full'
+    'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#CC1A00] focus:border-transparent w-full bg-white'
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1'
 
   return (
@@ -182,7 +204,9 @@ export default function BusquedaMasivaClient() {
 
       {/* Archivo */}
       <div className="mb-5">
-        <label className={labelClass}>Archivo Excel <span className="text-[#CC1A00]">*</span></label>
+        <label className={labelClass}>
+          Archivo Excel <span className="text-[#CC1A00]">*</span>
+        </label>
         <div
           onClick={() => inputRef.current?.click()}
           className="border-2 border-dashed border-gray-300 rounded-xl p-5 text-center cursor-pointer hover:border-[#CC1A00] hover:bg-red-50 transition-colors"
@@ -192,7 +216,7 @@ export default function BusquedaMasivaClient() {
             <p className="text-gray-700 font-medium text-sm">{archivo.name}</p>
           ) : (
             <>
-              <p className="text-gray-500 text-sm">Hac&eacute; clic o arrastr&aacute; tu archivo Excel aqu&iacute;</p>
+              <p className="text-gray-500 text-sm">Hacé clic o arrastrá tu archivo Excel aquí</p>
               <p className="text-gray-400 text-xs mt-1">Formatos: .xlsx, .xls</p>
             </>
           )}
@@ -204,7 +228,9 @@ export default function BusquedaMasivaClient() {
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Configuración de columnas</p>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>Columna Latitud <span className="text-[#CC1A00]">*</span></label>
+            <label className={labelClass}>
+              Columna Latitud <span className="text-[#CC1A00]">*</span>
+            </label>
             <input
               className={inputClass}
               placeholder="Ej: C"
@@ -214,7 +240,9 @@ export default function BusquedaMasivaClient() {
             />
           </div>
           <div>
-            <label className={labelClass}>Columna Longitud <span className="text-[#CC1A00]">*</span></label>
+            <label className={labelClass}>
+              Columna Longitud <span className="text-[#CC1A00]">*</span>
+            </label>
             <input
               className={inputClass}
               placeholder="Ej: D"
@@ -224,7 +252,9 @@ export default function BusquedaMasivaClient() {
             />
           </div>
           <div>
-            <label className={labelClass}>Fila de inicio <span className="text-[#CC1A00]">*</span></label>
+            <label className={labelClass}>
+              Fila de inicio <span className="text-[#CC1A00]">*</span>
+            </label>
             <input
               className={inputClass}
               placeholder="Ej: 2"
@@ -235,7 +265,10 @@ export default function BusquedaMasivaClient() {
             />
           </div>
           <div>
-            <label className={labelClass}>Fila de fin <span className="text-gray-400 font-normal">(opcional)</span></label>
+            <label className={labelClass}>
+              Fila de fin{' '}
+              <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
             <input
               className={inputClass}
               placeholder="Ej: 500"
@@ -253,7 +286,9 @@ export default function BusquedaMasivaClient() {
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Columnas de salida</p>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className={labelClass}>Columna para KM <span className="text-[#CC1A00]">*</span></label>
+            <label className={labelClass}>
+              Columna para KM <span className="text-[#CC1A00]">*</span>
+            </label>
             <input
               className={inputClass}
               placeholder="Ej: J"
@@ -263,7 +298,10 @@ export default function BusquedaMasivaClient() {
             />
           </div>
           <div>
-            <label className={labelClass}>Columna para sede <span className="text-gray-400 font-normal">(opcional)</span></label>
+            <label className={labelClass}>
+              Columna para sede{' '}
+              <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
             <input
               className={inputClass}
               placeholder="Ej: K"
@@ -275,23 +313,65 @@ export default function BusquedaMasivaClient() {
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm mb-4">
-          {error}
+      {/* Concurrencia */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-5">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Velocidad de procesamiento</p>
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <label className={labelClass}>
+              Consultas simultáneas{' '}
+              <span className="text-gray-400 font-normal">(1 = más lento y seguro · 6 = más rápido)</span>
+            </label>
+            <input
+              className={inputClass}
+              type="number"
+              min={1}
+              max={10}
+              value={concurrencia}
+              onChange={(e) => setConcurrencia(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2 mt-5">
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <button
+                key={n}
+                onClick={() => setConcurrencia(String(n))}
+                className={`w-9 h-9 rounded-lg text-sm font-semibold transition-colors ${
+                  concurrencia === String(n)
+                    ? 'bg-[#CC1A00] text-white'
+                    : 'bg-white border border-gray-300 text-gray-600 hover:border-[#CC1A00] hover:text-[#CC1A00]'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
         </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm mb-4">{error}</div>
       )}
 
-      {procesados !== null && !cargando && workbookListo && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <p className="text-green-700 text-sm font-medium">
-            Procesamiento completo — {procesados} filas calculadas correctamente.
-          </p>
-          <button
-            onClick={descargarExcel}
-            className="bg-green-600 hover:bg-green-700 text-white font-semibold text-sm px-5 py-2 rounded-lg transition-colors whitespace-nowrap"
-          >
-            Descargar Excel
-          </button>
+      {resultado && !cargando && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="text-green-700 font-semibold text-sm">
+                Procesamiento completo — {resultado.totalFilas} filas calculadas.
+              </p>
+              <p className="text-green-600 text-sm mt-0.5">
+                Total de kilómetros:{' '}
+                <span className="font-bold">{resultado.totalKm.toLocaleString('es-AR')} km</span>
+              </p>
+            </div>
+            <button
+              onClick={descargarExcel}
+              className="bg-green-600 hover:bg-green-700 text-white font-semibold text-sm px-5 py-2 rounded-lg transition-colors whitespace-nowrap"
+            >
+              Descargar Excel
+            </button>
+          </div>
         </div>
       )}
 
@@ -315,7 +395,7 @@ export default function BusquedaMasivaClient() {
         disabled={!archivo || cargando}
         className="w-full bg-[#CC1A00] text-white font-semibold py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#aa1500] transition-colors"
       >
-        {cargando ? `Procesando... ${progreso}%` : 'Procesar y descargar Excel'}
+        {cargando ? `Procesando... ${progreso}%` : 'Procesar Excel'}
       </button>
     </div>
   )
