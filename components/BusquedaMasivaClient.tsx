@@ -173,7 +173,7 @@ export default function BusquedaMasivaClient() {
       ws['!ref'] = XLSX.utils.encode_range(newRange)
 
       // Serializar el workbook a bytes para descarga
-      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array
+      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array<ArrayBuffer>
       const totalKm = resultados.reduce((sum, r) => sum + (r.distancia_km ?? 0), 0)
 
       setResultado({
