@@ -106,40 +106,39 @@ export default function BusquedaMasivaClient() {
         return
       }
 
-      // Procesar en lotes de 20
-      const LOTE = 20
+      // Procesar de a 1 punto por vez para evitar timeouts y obtener datos correctos
       let procesadosCount = 0
 
-      for (let i = 0; i < puntos.length; i += LOTE) {
-        const lote = puntos.slice(i, i + LOTE)
-        setProgresoMsg(`Procesando filas ${puntos[i].rowIdx + 2}...`)
+      for (let i = 0; i < puntos.length; i++) {
+        const punto = puntos[i]
+        setProgresoMsg(`Calculando fila ${punto.rowIdx + 1} (${i + 1} de ${puntos.length})...`)
 
         const res = await fetch('/api/busqueda-masiva', {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ puntos: lote.map((p) => ({ lat: p.lat, lon: p.lon })) }),
+          body: JSON.stringify({ puntos: [{ lat: punto.lat, lon: punto.lon }] }),
         })
 
-        if (!res.ok) throw new Error('Error en el servidor al calcular distancias.')
+        if (res.status === 401) throw new Error('Sesión expirada. Recargá la página e ingresá nuevamente.')
+        if (!res.ok) {
+          const errBody = await res.text()
+          throw new Error(`Error del servidor (${res.status}): ${errBody}`)
+        }
         const data = await res.json()
+        const centro = data.resultados?.[0]?.centro_mas_cercano ?? null
 
-        // Escribir resultados en el workbook
-        data.resultados.forEach((resultado: { centro_mas_cercano: { distancia_km: number; nombre: string } | null }, j: number) => {
-          const { rowIdx } = lote[j]
-          const centro = resultado.centro_mas_cercano
+        // Escribir KM
+        const kmCell = XLSX.utils.encode_cell({ r: punto.rowIdx, c: kmIdx })
+        ws[kmCell] = { t: 'n', v: centro?.distancia_km ?? '' }
 
-          // Escribir KM
-          const kmCell = XLSX.utils.encode_cell({ r: rowIdx, c: kmIdx })
-          ws[kmCell] = { t: 'n', v: centro?.distancia_km ?? '' }
+        // Escribir sede si corresponde
+        if (sedeIdx !== null) {
+          const sedeCell = XLSX.utils.encode_cell({ r: punto.rowIdx, c: sedeIdx })
+          ws[sedeCell] = { t: 's', v: centro?.nombre ?? '' }
+        }
 
-          // Escribir sede si corresponde
-          if (sedeIdx !== null) {
-            const sedeCell = XLSX.utils.encode_cell({ r: rowIdx, c: sedeIdx })
-            ws[sedeCell] = { t: 's', v: centro?.nombre ?? '' }
-          }
-        })
-
-        procesadosCount += lote.length
+        procesadosCount++
         setProgreso(Math.round((procesadosCount / puntos.length) * 100))
       }
 
